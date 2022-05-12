@@ -1,0 +1,168 @@
+---
+title: "Interpretation ivC"
+author: "Keyon Hedayati"
+date: "4/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load packages}
+library(tidyverse)
+library(caret)
+```
+
+Lets load our data per usual.
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+
+Clean it up. One for regression one for classification
+
+```{r, reg}
+df_reg <- df_all %>% 
+  mutate(y = log(response)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+```
+
+
+```{r, class}
+df_class<- df_all %>% 
+  mutate(y = ifelse(outcome == 'event', 1, 0)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+```
+
+Lets load our best models.
+
+```{r, load regression}
+re_svm_radial_tuned <- readr::read_rds('svm_radial_tuned_model.rds')
+```
+
+
+```{r, load classification}
+re_class_avg_nnet <- readr::read_rds('model_avg_nnet_class.rds')
+```
+
+
+We discovered in ivB that Customer B is the most difficult to predict, so we will set up our viz grid with that assumption, first using the regression model. We also learned that potentially features xs_03, and xw_02 were also important at least to the pairwise model. Unfortunately, we couldn't get the most important features for the svm model, but we will try using those for now.
+
+```{r, viz grid regression}
+
+viz_grid <- expand.grid(xs_03 = seq(min(df_reg$xs_06), max(df_reg$xs_06), length.out = 101),
+                        xw_02 = seq(min(df_reg$xw_03), max(df_reg$xw_03), length.out = 6),
+                        xb_01 = median(df_reg$xb_01),
+                        xb_02 = median(df_reg$xb_02),
+                        xb_03 = median(df_reg$xb_03),
+                        xb_04 = median(df_reg$xb_04),
+                        xb_05 = median(df_reg$xb_05),
+                        xb_06 = median(df_reg$xb_06),
+                        xb_07 = median(df_reg$xb_07),
+                        xb_08 = median(df_reg$xb_08),
+                        xn_01 = median(df_reg$xn_01),
+                        xn_02 = median(df_reg$xn_02),
+                        xn_03 = median(df_reg$xn_03),
+                        xn_04 = median(df_reg$xn_04),
+                        xn_05 = median(df_reg$xn_05),
+                        xn_06 = median(df_reg$xn_06),
+                        xn_07 = median(df_reg$xn_07),
+                        xn_08 = median(df_reg$xn_08),
+                        xa_01 = median(df_reg$xa_01),
+                        xa_02 = median(df_reg$xa_02),
+                        xa_03 = median(df_reg$xa_03),
+                        xa_04 = median(df_reg$xa_04),
+                        xa_05 = median(df_reg$xa_05),
+                        xa_06 = median(df_reg$xa_06),
+                        xa_07 = median(df_reg$xa_07),
+                        xa_08 = median(df_reg$xa_08),
+                        xw_01 = median(df_reg$xw_01),
+                        #xw_02 = median(df_reg$xw_02),
+                        xw_03 = median(df_reg$xw_03),
+                        xs_01 = median(df_reg$xs_01),
+                        xs_02 = median(df_reg$xs_02),
+                        #xs_03 = median(df_reg$xs_03),
+                        xs_04 = median(df_reg$xs_04),
+                        xs_05 = median(df_reg$xs_05),
+                        xs_06 = median(df_reg$xs_06),
+                        region = "YY",
+                        customer = "B",
+                        KEEP.OUT.ATTRS = FALSE,
+                        stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+
+viz_grid_test <- viz_grid %>% mutate(customer = factor(customer, levels=unique(df_reg$customer)), region = factor(region, levels=unique(df_reg$region)))
+
+```
+
+
+```{r, prediction helper function}
+
+tidy_predict <- function(mod, xnew)
+{
+  pred_df <- predict(mod, xnew, interval = "confidence") %>% 
+    as.data.frame() %>% tibble::as_tibble() %>% 
+    dplyr::select(pred = fit, ci_lwr = lwr, ci_upr = upr) %>% 
+    bind_cols(predict(mod, xnew, interval = 'prediction') %>% 
+                as.data.frame() %>% tibble::as_tibble() %>% 
+                dplyr::select(pred_lwr = lwr, pred_upr = upr))
+  
+  xnew %>% bind_cols(pred_df)
+}
+
+```
+
+
+```{r, predictions for regression}
+
+pred_svm_reg <- predict(re_svm_radial_tuned, viz_grid_test)
+
+pred_svm_reg %>%  head()
+df_reg_pred <- bind_cols(pred_svm_reg, viz_grid_test)
+df_reg_pred <- df_reg_pred %>% rename(y = '...1')
+
+```
+
+This shows that has the sentiment for feature xs_03 and xw_02 increase, the response *decreases* for customer B
+
+```{r, regression visual}
+
+df_reg_pred %>% 
+  ggplot(mapping = aes(x = xs_03)) +
+  geom_line(mapping = aes(y = y),
+            color = 'black') +
+  facet_wrap(~xw_02, labeller = "label_both") +
+  theme_bw()
+
+```
+
+Lets try and take a look for the classification
+
+```{r}
+pred_prob_avg_nnet <- predict(re_class_avg_nnet,viz_grid_test, type = 'prob')
+pred_prob_avg_nnet %>% head()
+```
+
+Put the tables together
+
+```{r, predictions for class}
+
+
+df_class_pred <- bind_cols(pred_prob_avg_nnet, viz_grid_test)
+df_class_pred %>% head()
+```
+This shows similar conclusions, as the two main features increase, the probability of the event dramatically decrease.
+
+```{r}
+df_class_pred %>% ggplot(mapping = aes(x=xs_03, y=xw_02)) + geom_raster(mapping=aes(fill = event)) + 
+  scale_fill_gradient2(limits=c(0,1), low='blue', high='red', mid = 'white', midpoint = 0.5)
+```
+
+
+
+

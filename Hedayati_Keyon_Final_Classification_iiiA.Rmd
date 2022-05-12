@@ -1,0 +1,223 @@
+---
+title: "Classification iiiA"
+author: "Keyon Hedayati"
+date: "4/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load Packages
+```{r, load_packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+```
+
+Load the data:
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+Clean the data for classification:
+
+```{r, class_03}
+dfiiiA <- df_all %>% 
+  mutate(y = ifelse(outcome == 'event', 1, 0)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+dfiiiA %>% glimpse()
+```
+
+
+Categorical only, additive
+```{r, cat only additive}
+
+set.seed(888)
+glm_cat_add <- glm(y ~ region + customer, family = "binomial", data = dfiiiA)
+glm_cat_add %>% summary()
+
+```
+
+
+Continuous only, additive
+```{r, cont only additive}
+
+set.seed(888)
+glm_cont_add <- glm(y ~ (. -customer -region), family = "binomial", dfiiiA) 
+glm_cont_add %>% summary()
+```
+
+
+All categorical and continuous linear additive
+```{r, all cat and cont add}
+
+glm_all_add <- glm(y ~ ., family = "binomial", data = dfiiiA)
+glm_all_add %>% summary()
+```
+
+
+```{r, save basic model for later}
+
+glm_all_add %>% readr::write_rds('glm_all_additive.rds')
+
+```
+
+
+Interaction between region and continuous, w/o customer
+```{r, region:cont}
+
+set.seed(888)
+glm_cont_x_region <- glm(y ~ (region) * (. -customer), family = "binomial", data = dfiiiA) 
+glm_cont_x_region %>% summary()
+```
+
+Interaction between customer and continuous, w/o region
+```{r, customer:cont}
+
+set.seed(888)
+glm_cont_x_cust <- glm(y ~ (customer) * (. -region), family = "binomial", data = dfiiiA) 
+glm_cont_x_cust %>% summary()
+```
+
+All pairwise interactions, no categorical
+```{r, pairwise continous}
+
+set.seed(888)
+glm_all_pairs_cont <- glm(y ~ (. -customer -region)^2, family = "binomial", data = dfiiiA) 
+glm_all_pairs_cont %>% summary()
+```
+
+
+Choice #1
+
+```{r, region interaction splines}
+
+set.seed(888)
+glm_region_X_spline <- glm( y ~ (. -customer) +
+                    (region  *
+                     splines::ns(xa_02, df = 2) +
+                     splines::ns(xb_02, df = 2) +
+                     splines::ns(xb_05, df = 2) +
+                     splines::ns(xn_02, df = 2) +
+                     splines::ns(xw_02, df = 2) +
+                     splines::ns(xw_03, df = 2) +
+                     splines::ns(xs_02, df = 2) +
+                     splines::ns(xs_03, df = 2) +
+                     splines::ns(xs_05, df = 2) +
+                     splines::ns(xs_06, df = 2)),
+                    family = "binomial",
+                    data = dfiiiA)
+
+glm_region_X_spline %>% summary()
+```
+
+
+Choice # 2
+```{r, region interaction with pairwise cont}
+
+set.seed(888)
+glm_region_X_pairs <- glm( y ~ region * (. -customer)^2,
+                            family = "binomial",
+                    data = dfiiiA)
+
+glm_region_X_pairs %>% summary()
+```
+
+
+Choice # 3
+
+
+```{r, customer interaction splines}
+
+set.seed(888)
+glm_cust_X_spline <- glm( y ~ (. -region) +
+                    (customer  *
+                     splines::ns(xn_01, df = 3) +
+                     splines::ns(xb_02, df = 4) +
+                     splines::ns(xb_05, df = 4) +
+                     splines::ns(xn_02, df = 4) +
+                     splines::ns(xw_02, df = 4) +
+                     splines::ns(xw_03, df = 4) +
+                     splines::ns(xs_02, df = 4) +
+                     splines::ns(xs_03, df = 4) +
+                     splines::ns(xs_05, df = 4) +
+                     splines::ns(xs_06, df = 4)),
+                    family = "binomial",
+                    data = dfiiiA)
+
+glm_cust_X_spline %>% summary()
+```
+
+
+After fitting all of the models, we definitely received some warnings such as 'fitted probabilities numerically 0 or 1 occurred'. There is no way to predict how the probability is changing with the changing input, because it isn’t changing. There is linear separation which causes the problem, and you see it when there are low data points. It is also why we are missing some of the coefficients when printing out. The program essentially crashes.
+
+**Performance**
+
+```{r, broom wrapper}
+
+# pass in model to pull out relevant metrics
+extract_metrics <- function(mod, mod_name)
+{
+  broom::glance(mod) %>% mutate(mod_name = mod_name)
+}
+
+```
+
+
+```{r, compile metrics df}
+all_metrics <- purrr::map2_dfr(list(glm_cat_add, glm_cont_add, glm_all_add, glm_cont_x_region, 
+                                    glm_cont_x_cust, glm_all_pairs_cont, 
+                                    glm_region_X_spline, glm_region_X_pairs, glm_cust_X_spline),
+                               c("glm_cat_add", "glm_cont_add", "glm_all_add", "glm_cont_x_region", 
+                                    "glm_cont_x_cust", "glm_all_pairs_cont", 
+                                    "glm_region_X_spline", "glm_region_X_pairs", "glm_cust_X_spline"),
+                               extract_metrics)
+
+
+all_metrics %>% glimpse()
+
+```
+
+Visualization
+```{r, metrics visualization, fig.height=10}
+
+all_metrics %>% 
+  select(mod_name, deviance, logLik, AIC, BIC) %>% 
+  pivot_longer(!c("mod_name")) %>% 
+  ggplot(mapping = aes(x = mod_name, y = value)) +
+  geom_point(size = 5) +
+  facet_wrap(~name, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+By the above graphic, I think the top models are: *glm_all_add*, *glm_region_X_spline*, *glm_cust_X_spline* by looking a balance of all the metrics shown above.
+
+**Coefficient Summaries**
+
+Now we will look at the coefficients of the top 3. 
+```{r, coefficient of top 1, , fig.height=9}
+
+coefplot(glm_all_add)
+```
+
+```{r, coefficient of top 2, fig.height=9}
+
+coefplot(glm_region_X_spline)
+```
+
+```{r, coefficient of my choice, fig.height=9}
+
+coefplot(glm_cust_X_spline)
+```
+
+
+
+They all compare with a massive amount of uncertainty when categorical inputs are taken into account. The uncertainty is so large, it makes the graph difficult to read, and makes it appear as the rest of the features don't matter and hover around the 9 point. I do think the regions seem important, and certain customers. Additionally, xa_04,xn_08,xn_07 seem very important.
+

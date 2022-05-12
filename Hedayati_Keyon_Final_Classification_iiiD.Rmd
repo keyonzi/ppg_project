@@ -1,0 +1,645 @@
+---
+title: "Classification iiiD"
+author: "Keyon Hedayati"
+date: "4/24/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load_packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+library(recipes)
+```
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+
+```{r, class_04}
+dfiiiD <- df_all %>% 
+  mutate(outcome = factor(outcome, 
+                          levels = c("event", "non_event"))) %>% 
+  select(region, customer, starts_with('x'), outcome)
+
+dfiiiD %>% glimpse()
+```
+
+
+```{r, class_05}
+dfiiiD %>% 
+  select(outcome) %>% 
+  summary()
+```
+
+In general, I will be setting many of the code chunks to False, because they take a long time to run. Instead I've loaded the models so that the results can still be seen.
+
+**Generalized Linear Models**
+
+Preprocessing Settings:
+
+```{r, preprocessing metrics}
+
+my_ctrl <- trainControl(method = 'cv', number = 5,
+                             summaryFunction = twoClassSummary,
+                             classProbs = TRUE,
+                             savePredictions = TRUE)
+
+my_ctrl_pca <- trainControl(method = 'cv', number = 5,
+                             summaryFunction = twoClassSummary,
+                             classProbs = TRUE,
+                             savePredictions = TRUE,
+                             preProcOptions = list(pcaComp = 25))
+
+my_metric <- "ROC"
+
+```
+
+All categorical and continuous inputs - linear additive features
+
+```{r, all additive}
+set.seed(888)
+fit_glm_all_add <- train(outcome ~ ., data = dfiiiD,
+                 method = "glm",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glm_all_add
+
+```
+
+All pairwise interactions of continuous inputs with categorical additive
+
+```{r, all pairwise interactions PCA}
+set.seed(888)
+fit_glm_cont_pairswise_pca <- train(outcome ~ customer + region + (. -customer -region)^2, data = dfiiiD,
+                 method = "glm",
+                 preProcess = c("center", "scale", "pca"),
+                 metric = my_metric,
+                 trControl = my_ctrl_pca)
+
+fit_glm_cont_pairswise_pca
+
+```
+
+```{r, all pairwise interactions}
+set.seed(888)
+fit_glm_cont_pairswise <- train(outcome ~ customer + region + (. -customer -region)^2, data = dfiiiD,
+                 method = "glm",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glm_cont_pairswise
+
+```
+
+
+```{r, region interaction with spline}
+set.seed(888)
+
+fit_glm_region_X_spline <- train(outcome ~ (. -customer) +
+                    (region  *
+                     splines::ns(xa_02, df = 2) +
+                     splines::ns(xb_02, df = 2) +
+                     splines::ns(xb_05, df = 2) +
+                     splines::ns(xn_02, df = 2) +
+                     splines::ns(xw_02, df = 2) +
+                     splines::ns(xw_03, df = 2) +
+                     splines::ns(xs_02, df = 2) +
+                     splines::ns(xs_03, df = 2) +
+                     splines::ns(xs_05, df = 2) +
+                     splines::ns(xs_06, df = 2)), 
+                    data = dfiiiD,
+                 method = "glm",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glm_region_X_spline
+
+
+```
+
+
+```{r, customer interaction with spline}
+set.seed(888)
+
+fit_glm_cust_X_spline <- train(outcome ~ (. -region) +
+                    (customer  *
+                     splines::ns(xa_02, df = 2) +
+                     splines::ns(xb_02, df = 2) +
+                     splines::ns(xb_05, df = 2) +
+                     splines::ns(xn_02, df = 2) +
+                     splines::ns(xw_02, df = 2) +
+                     splines::ns(xw_03, df = 2) +
+                     splines::ns(xs_02, df = 2) +
+                     splines::ns(xs_03, df = 2) +
+                     splines::ns(xs_05, df = 2) +
+                     splines::ns(xs_06, df = 2)), 
+                    data = dfiiiD,
+                 method = "glm",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glm_cust_X_spline
+
+
+```
+
+
+*Elastic net*
+
+All pairwise of continuous inputs, with additive categorical
+
+```{r, pairwise with outcome}
+set.seed(888)
+fit_glmnet_outcome_pairwise_cat_add <- train(outcome ~ customer + region + (. -customer -region)^2, 
+                        data = dfiiiD,
+                        method = "glmnet",
+                        preProcess = c("center", "scale"),
+                        metric = my_metric,
+                        trControl = my_ctrl)
+
+fit_glmnet_outcome_pairwise_cat_add
+```
+
+
+```{r, generate tuning grid}
+lambda_grid <- exp(seq(log(min(fit_glmnet_outcome_pairwise_cat_add$results$lambda)),
+                          log(max(fit_glmnet_outcome_pairwise_cat_add$results$lambda)),
+                          length.out = 15))
+
+enet_grid <- expand.grid(alpha = seq(0.1, 0.9, length.out = 9),
+                         lambda = lambda_grid)
+
+```
+
+
+```{r, tuned pairwise with outcome}
+set.seed(888)
+tuned_glmnet_outcome_pairwise_cat_add <- train(outcome ~ customer + region + (. -customer -region)^2, 
+                        data = dfiiiD,
+                        method = "glmnet",
+                        preProcess = c("center", "scale"),
+                        metric = my_metric,
+                        tuneGrid = enet_grid,
+                        trControl = my_ctrl)
+
+tuned_glmnet_outcome_pairwise_cat_add
+```
+
+```{r, fit_save_01}
+tuned_glmnet_outcome_pairwise_cat_add %>% readr::write_rds('tuned_glmnet_outcome_pairwise_cat_add_class.rds')
+```
+
+
+
+More complex but with Elastic net
+
+```{r, glmnet region interaction with spline}
+set.seed(888)
+
+fit_glmnet_region_X_spline <- train(outcome ~ (. -customer) +
+                    (region  *
+                     splines::ns(xa_02, df = 2) +
+                     splines::ns(xb_02, df = 2) +
+                     splines::ns(xb_05, df = 2) +
+                     splines::ns(xn_02, df = 2) +
+                     splines::ns(xw_02, df = 2) +
+                     splines::ns(xw_03, df = 2) +
+                     splines::ns(xs_02, df = 2) +
+                     splines::ns(xs_03, df = 2) +
+                     splines::ns(xs_05, df = 2) +
+                     splines::ns(xs_06, df = 2)), 
+                    data = dfiiiD,
+                 method = "glmnet",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glmnet_region_X_spline
+
+
+```
+
+
+```{r, tuned region interaction with spline}
+set.seed(888)
+
+tune_glmnet_region_X_spline <- train(outcome ~ (. -customer) +
+                    (region  *
+                     splines::ns(xa_02, df = 2) +
+                     splines::ns(xb_02, df = 2) +
+                     splines::ns(xb_05, df = 2) +
+                     splines::ns(xn_02, df = 2) +
+                     splines::ns(xw_02, df = 2) +
+                     splines::ns(xw_03, df = 2) +
+                     splines::ns(xs_02, df = 2) +
+                     splines::ns(xs_03, df = 2) +
+                     splines::ns(xs_05, df = 2) +
+                     splines::ns(xs_06, df = 2)), 
+                    data = dfiiiD,
+                 method = "glmnet",
+                 preProcess = c("center", "scale"),
+                 metric = my_metric,
+                 tuneGrid = enet_grid,
+                 trControl = my_ctrl)
+
+tune_glmnet_region_X_spline
+
+```
+
+```{r, fit_save_03, eval=FALSE}
+tune_glmnet_region_X_spline %>% readr::write_rds('tune_glmnet_region_X_spline_class.rds')
+```
+
+*Neural Network*
+
+```{r, tune grid}
+
+nnet_grid <- expand.grid(size = c(10, 20, 30, 40),
+                         decay = exp(seq(-6, 1, length.out = 11)))
+
+```
+
+
+```{r, fitting nnet}
+
+set.seed(888)
+fit_nnet <- train(outcome ~ ., 
+                       data = dfiiiD,
+                       method = "nnet",
+                       metric = my_metric,
+                       #tuneGrid = nnet_grid,
+                       preProcess = c("center", "scale"),
+                       trControl = my_ctrl,
+                       maxit = 1000,
+                       MaxNWts = 2500,
+                       trace=FALSE)
+
+
+
+fit_nnet
+
+```
+
+
+Setting eval to false, because takes long with this tunning grid. Instead I've saved the model, and will reload it when needed.
+
+```{r, fitting nnet tuned, eval=FALSE}
+
+set.seed(888)
+tune_nnet <- train(outcome ~ ., 
+                       data = dfiiiD,
+                       method = "nnet",
+                       metric = my_metric,
+                       tuneGrid = nnet_grid,
+                       preProcess = c("center", "scale"),
+                       trControl = my_ctrl,
+                       maxit = 1000,
+                       MaxNWts = 2500,
+                       trace=FALSE)
+
+
+
+tune_nnet
+
+```
+
+```{r, reload_02}
+re_tune_nnet <- readr::read_rds('tune_nnet_class.rds')
+re_tune_nnet
+```
+
+*Random Forest*
+
+```{r, rf tune grid}
+
+rf_grid <- expand.grid(mtry = c(2, 5, 7, 10, 12, 15, 18, 20, 22, 24, 26, 30, 40, 45, 50, 60))
+```
+
+
+```{r, random forest}
+
+set.seed(888)
+fit_rf <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'rf',
+                      metric = my_metric,
+                      #tuneGrid = rf_grid,
+                      trControl = my_ctrl,
+                      importance = TRUE)
+
+
+fit_rf
+
+```
+
+
+
+
+```{r, random forest tuned, eval=FALSE}
+
+set.seed(888)
+tune_rf <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'rf',
+                      metric = my_metric,
+                      tuneGrid = rf_grid,
+                      trControl = my_ctrl,
+                      importance = TRUE)
+
+
+tune_rf
+
+```
+
+```{r, fit_save_04, eval=FALSE}
+tune_rf %>% readr::write_rds('tune_rf_class.rds')
+```
+
+```{r, reload_tune_rf}
+re_tune_rf <- readr::read_rds('tune_rf_class.rds')
+re_tune_rf
+```
+
+*Gradient Boosted Tree*
+
+```{r, xgb tree, eval=FALSE, message=FALSE, warning=FALSE}
+
+set.seed(888)
+fit_xgb <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'xgbTree',
+                      metric = my_metric,
+                      trControl = my_ctrl,
+                      importance = TRUE)
+
+fit_xgb
+
+print("Get rid of warning messages")
+```
+
+```{r, fit_xgb, eval=FALSE}
+fit_xgb %>% readr::write_rds('fit_xgb_class.rds')
+```
+
+```{r, reload_fit_xgb}
+re_fit_xgb <- readr::read_rds('fit_xgb_class.rds')
+re_fit_xgb
+```
+
+*Choice #1 SVM Radial*
+
+
+
+```{r, SVM no tune}
+
+set.seed(888)
+svm_radial <- train(outcome ~ .,
+                  data = dfiiiD,
+                  method = 'svmRadial',
+                  metric = my_metric,
+                  preProcess = c("center", "scale"),
+                  #tuneGrid = svm_radial_grid,
+                  trControl = my_ctrl
+                  
+                  )
+
+svm_radial
+```
+
+```{r, save_fit_svm, eval=FALSE}
+svm_radial %>% readr::write_rds('svm_radial_class.rds')
+```
+
+
+```{r, svm tuning grid}
+svm_radial_grid <- expand.grid(sigma = seq(.001,.015,length.out=10),
+                         C = seq(5, 8, by=.5))
+```
+
+
+Because this model takes awhile to run with this grid, I've set chunk to False and exported the model
+
+```{r, SVM tuned, eval=FALSE }
+
+set.seed(888)
+tune_svm_radial <- train(outcome ~ .,
+                  data = dfiiiD,
+                  method = 'svmRadial',
+                  metric = my_metric,
+                  preProcess = c("center", "scale"),
+                  tuneGrid = svm_radial_grid,
+                  trControl = my_ctrl
+                  )
+
+tune_svm_radial
+```
+
+```{r, save_radial tune, eval=FALSE}
+tune_svm_radial %>% readr::write_rds('tune_svm_radial_class.rds')
+```
+
+```{r, reload_tune_svm}
+re_tune_svm_radial <- readr::read_rds('tune_svm_radial_class.rds')
+re_tune_svm_radial
+```
+
+```{r, svm tuning grid 2}
+svm_radial_2 <- expand.grid(sigma = seq(.001,.015,length.out=10),
+                         C = seq(1, 5, by=.5))
+```
+
+
+One more round of tuning, but it didn't improve
+```{r, SVM tuned 2, eval=FALSE }
+
+set.seed(888)
+retune_svm_radial_pca <- train(outcome ~ .,
+                  data = dfiiiD,
+                  method = 'svmRadial',
+                  metric = my_metric,
+                  preProcess = c("center", "scale", "pca"),
+                  tuneGrid = svm_radial_2,
+                  trControl = my_ctrl
+                  
+                  )
+
+retune_svm_radial_pca
+```
+
+```{r, reload_04}
+re_tune_svm_radial_pca <- readr::read_rds('tune_svm_radial_pca_class.rds')
+re_tune_svm_radial_pca
+```
+
+**Choice # 2**
+
+*Bagged Flexible Discriminant Analysis*
+
+```{r, flexible bag}
+fda_grid <- expand.grid(nprune = c(6, 8, 12, 15, 21),
+                         degree = seq.int(1, 5))
+
+```
+
+
+```{r, bag fda }
+set.seed(888)
+fit_bag_fda <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'bagFDA',
+                      metric = my_metric,
+                      trControl = my_ctrl)
+
+
+fit_bag_fda
+```
+
+```{r, save_bag, eval=FALSE}
+fit_bag_fda %>% readr::write_rds('fit_bag_fda_class.rds')
+```
+
+
+```{r tuned bag fda, eval=FALSE}
+set.seed(888)
+tune_bag_fda <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'bagFDA',
+                      metric = my_metric,
+                     tuneGrid = fda_grid,
+                      trControl = my_ctrl)
+
+
+tune_bag_fda
+```
+
+```{r, save_bag tune, eval=FALSE}
+tune_bag_fda %>% readr::write_rds('tune_bag_fda_class.rds')
+```
+
+```{r, reload tune fit bag fda}
+re_tune_bag_fda <- readr::read_rds('tune_bag_fda_class.rds')
+re_tune_bag_fda
+```
+
+
+**Choice #3**
+
+*Model Averaged Neural Network*
+
+```{r, fit_adjacent_weight, eval=FALSE}
+set.seed(888)
+model_avg_nnet <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'avNNet',
+                      metric = my_metric,
+                      trControl = my_ctrl,
+                      importance = TRUE)
+
+
+model_avg_nnet
+
+```
+
+
+```{r, save nnet, eval=FALSE}
+model_avg_nnet %>% readr::write_rds('model_avg_nnet_class.rds')
+```
+
+```{r, reload model avg net}
+re_model_avg_nnet <- readr::read_rds('model_avg_nnet_class.rds')
+re_model_avg_nnet
+```
+
+Now lets try tuning.
+```{r, adjacent weight tune}
+
+avg_nnet_grid <- expand.grid(size = c(10, 15, 20),
+                         decay = exp(seq(-7, 2, length.out = 11)),
+                         bag = c(TRUE, FALSE))
+
+```
+
+
+```{r, tuned_fit_adjacent_weight, eval=FALSE}
+set.seed(888)
+tune_avg_nnet <- train(outcome ~ .,
+                      data = dfiiiD,
+                      method = 'avNNet',
+                      metric = my_metric,
+                      preProcess = c("center", "scale"),
+                      tuneGrid = avg_nnet_grid,
+                      trControl = my_ctrl,
+                      importance = TRUE)
+
+
+tune_avg_nnet
+
+```
+
+
+```{r, save nnet tuned, eval=FALSE}
+tune_avg_nnet %>% readr::write_rds('tune_avg_nnet_class.rds')
+```
+
+```{r, reload_01}
+re_tune_avg_nnet <- readr::read_rds('tune_avg_nnet_class.rds')
+re_tune_avg_nnet
+```
+
+
+I tried running a neural net with PCA in another file, it didn't perform that great comparitively, but I'm including the saved model below.
+
+```{r, reload_03}
+re_tune_nnet_pca <- readr::read_rds('tune_nnet_pca_class.rds')
+re_tune_nnet_pca
+```
+
+```{r, comparison summary}
+
+all_cv_summary <- resamples(list(GLM_ALL_ADD = fit_glm_all_add,
+                                  GLM_PAIR = fit_glm_cont_pairswise,
+                                  GLM_PAIR_PCA = fit_glm_cont_pairswise_pca,
+                                  REGION_X_SPLINE = fit_glm_region_X_spline,
+                                  CUST_X_SPLINE = fit_glm_cust_X_spline,
+                                  GLMNET_PAIR_TUNED = tuned_glmnet_outcome_pairwise_cat_add,
+                                  GLMNET_REG_X_SPLINE_TUNED = tune_glmnet_region_X_spline,
+                                  NNET = fit_nnet,
+                                  NNET_TUNED = re_tune_nnet,
+                                  NNET_TUNED_PCA = re_tune_nnet_pca,
+                                  RF = fit_rf,
+                                  RF_TUNE = re_tune_rf,
+                                  XGB = re_fit_xgb,
+                                  SVM_TUNE = re_tune_svm_radial,
+                                  SVM_TUNE_PCA = re_tune_svm_radial_pca,
+                                  FDA_BAG = fit_bag_fda,
+                                  TUNE_FDA_BAG = re_tune_bag_fda,
+                                  AVG_NNET = re_model_avg_nnet,
+                                  TUNE_AVG_NNET = re_tune_avg_nnet
+                                 ))
+
+
+dotplot(all_cv_summary, metric = 'ROC')
+
+```
+
+
+
+
+
+
+
+
+
+
+

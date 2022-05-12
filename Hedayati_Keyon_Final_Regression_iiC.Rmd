@@ -1,0 +1,300 @@
+---
+title: "Regression iiC"
+author: "Keyon Hedayati"
+date: "4/21/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load_packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+library(rstanarm)
+
+
+```
+
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+Load the data and transform y
+
+```{r, reg_01}
+dfii <- df_all %>% 
+  mutate(y = log(response)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+```
+
+Load models
+
+```{r, load relevant models}
+
+re_lm_cont_cust_add_region_X_splines <- readr::read_rds('bayes_cont_add_region_X_splines.rds')
+re_lm_all_add <- readr::read_rds('lm_all_additive.rds')
+
+```
+
+
+**Spline 'winning' model**
+
+
+```{r}
+dfii %>% summary()
+```
+
+
+*Make the visualization grid*
+
+A few of the important inputs appear to be "xs_06", "xw_03", and "customerK" seems like the easiest to predict customer based on  the coefficient plot in iiB.
+
+
+```{r, viz grid for bayesian spline model}
+
+colnames(dfii)
+viz_grid <- expand.grid(xs_06 = seq(0, 1.9, length.out = 101),
+                        xw_03 = seq(9, 125, length.out = 6),
+                        xb_01 = median(dfii$xb_01),
+                        xb_02 = median(dfii$xb_02),
+                        xb_03 = median(dfii$xb_03),
+                        xb_04 = median(dfii$xb_04),
+                        xb_05 = median(dfii$xb_05),
+                        xb_06 = median(dfii$xb_06),
+                        xb_07 = median(dfii$xb_07),
+                        xb_08 = median(dfii$xb_08),
+                        xn_01 = median(dfii$xn_01),
+                        xn_02 = median(dfii$xn_02),
+                        xn_03 = median(dfii$xn_03),
+                        xn_04 = median(dfii$xn_04),
+                        xn_05 = median(dfii$xn_05),
+                        xn_06 = median(dfii$xn_06),
+                        xn_07 = median(dfii$xn_07),
+                        xn_08 = median(dfii$xn_08),
+                        xa_01 = median(dfii$xa_01),
+                        xa_02 = median(dfii$xa_02),
+                        xa_03 = median(dfii$xa_03),
+                        xa_04 = median(dfii$xa_04),
+                        xa_05 = median(dfii$xa_05),
+                        xa_06 = median(dfii$xa_06),
+                        xa_07 = median(dfii$xa_07),
+                        xa_08 = median(dfii$xa_08),
+                        xw_01 = median(dfii$xw_01),
+                        xw_02 = median(dfii$xw_02),
+                        #xw_03 = median(dfii$xw_03),
+                        xs_01 = median(dfii$xs_01),
+                        xs_02 = median(dfii$xs_02),
+                        xs_03 = median(dfii$xs_03),
+                        xs_04 = median(dfii$xs_04),
+                        xs_05 = median(dfii$xs_05),
+                        #xs_06 = median(dfii$xs_06),
+                        region = "ZZ",
+                        customer = "K",
+                        KEEP.OUT.ATTRS = FALSE,
+                        stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+```
+
+
+
+```{r, prediction samples confidence}
+pred_bayes <- posterior_linpred(re_lm_cont_cust_add_region_X_splines, newdata = viz_grid)
+
+```
+
+
+```{r, prediction for prediction interval}
+
+pred_bayes_predict <- posterior_predict(re_lm_cont_cust_add_region_X_splines, newdata = viz_grid)
+
+```
+poster predict accounts for sigma, and RMSE
+
+```{r, prediction interval table}
+pred_bayes_pred <- pred_bayes_predict %>% 
+  as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column("post_id") %>% 
+  pivot_longer(!c("post_id"), names_to = 'pred_id') %>% 
+  mutate(across(.cols = 'pred_id', .fns = as.numeric)) %>% 
+  group_by(pred_id) %>% 
+  summarise(num_post = n(),
+            trend_avg = mean(value),
+            trend_lwr = quantile(value, 0.05),
+            trend_upr = quantile(value, 0.95)) %>% 
+  ungroup() %>% 
+  left_join(viz_grid %>% tibble::rowid_to_column("pred_id"),
+            by = "pred_id") 
+
+
+
+pred_bayes_pred %>% head()
+```
+*Prediction Interval Graphic*
+
+```{r, baysian prediction interval graphic}
+pred_bayes_pred %>% 
+  ggplot(mapping = aes(x = xs_06)) +
+  geom_ribbon(mapping = aes(ymin = trend_lwr,
+                            ymax = trend_upr,
+                            group = xw_03
+                            ),
+              alpha = 0.5) +
+  
+  geom_line(mapping = aes(y = trend_avg,
+                          group = xw_03
+                          #color = as.factor(xw_03)),
+                          ),
+            size = 1.) +
+  facet_wrap(~xw_03, labeller = "label_both") +
+  scale_fill_viridis_d("xw_03") +
+  scale_color_viridis_d("xw_03") +
+  labs(y = "mean trend") +
+  theme_bw() +
+  theme(legend.position = "top")
+```
+
+It appears the prediction points mostly fall very close to the trend line until you get to the edges of the inputs. They also follow a non-linear trend.
+
+
+```{r, confidence interval table}
+pred_bayes_conf <- pred_bayes %>% 
+  as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column("post_id") %>% 
+  pivot_longer(!c("post_id"), names_to = 'pred_id') %>% 
+  mutate(across(.cols = 'pred_id', .fns = as.numeric)) %>% 
+  group_by(pred_id) %>% 
+  summarise(num_post = n(),
+            trend_avg = mean(value),
+            trend_lwr = quantile(value, 0.05),
+            trend_upr = quantile(value, 0.95)) %>% 
+  ungroup() %>% 
+  left_join(viz_grid %>% tibble::rowid_to_column("pred_id"),
+            by = "pred_id") 
+
+
+
+pred_bayes_conf %>% head()
+```
+
+*Confidence Interval Graphics*
+
+```{r, bayesian confidence interval}
+pred_bayes_conf %>% 
+  ggplot(mapping = aes(x = xs_06)) +
+  geom_ribbon(mapping = aes(ymin = trend_lwr,
+                            ymax = trend_upr,
+                            group = xw_03
+                            ),
+              alpha = 0.5) +
+  
+  geom_line(mapping = aes(y = trend_avg,
+                          group = xw_03
+                          #color = as.factor(xw_03)),
+                          ),
+            size = 1.) +
+  facet_wrap(~xw_03, labeller = "label_both") +
+  scale_fill_viridis_d("xw_03") +
+  scale_color_viridis_d("xw_03") +
+  labs(y = "mean trend") +
+  theme_bw() +
+  theme(legend.position = "top")
+```
+
+The model is very confident around the middle of the inputs, with a narrow ribbon that grows wides at the edges of the input. As you can see, the trend is non-linear.
+
+**All Additive Winning Model**
+
+```{r, grid for all additive}
+viz_grid_lm_all <- expand.grid(xb_04 = seq(-2, 5, length.out = 101),
+                        xn_04 = seq(-4, 5, length.out = 6),
+                        xb_01 = median(dfii$xb_01),
+                        xb_02 = median(dfii$xb_02),
+                        xb_03 = median(dfii$xb_03),
+                        #xb_04 = median(dfii$xb_04),
+                        xb_05 = median(dfii$xb_05),
+                        xb_06 = median(dfii$xb_06),
+                        xb_07 = median(dfii$xb_07),
+                        xb_08 = median(dfii$xb_08),
+                        xn_01 = median(dfii$xn_01),
+                        xn_02 = median(dfii$xn_02),
+                        xn_03 = median(dfii$xn_03),
+                        #xn_04 = median(dfii$xn_04),
+                        xn_05 = median(dfii$xn_05),
+                        xn_06 = median(dfii$xn_06),
+                        xn_07 = median(dfii$xn_07),
+                        xn_08 = median(dfii$xn_08),
+                        xa_01 = median(dfii$xa_01),
+                        xa_02 = median(dfii$xa_02),
+                        xa_03 = median(dfii$xa_03),
+                        xa_04 = median(dfii$xa_04),
+                        xa_05 = median(dfii$xa_05),
+                        xa_06 = median(dfii$xa_06),
+                        xa_07 = median(dfii$xa_07),
+                        xa_08 = median(dfii$xa_08),
+                        xw_01 = median(dfii$xw_01),
+                        xw_02 = median(dfii$xw_02),
+                        xw_03 = median(dfii$xw_03),
+                        xs_01 = median(dfii$xs_01),
+                        xs_02 = median(dfii$xs_02),
+                        xs_03 = median(dfii$xs_03),
+                        xs_04 = median(dfii$xs_04),
+                        xs_05 = median(dfii$xs_05),
+                        xs_06 = median(dfii$xs_06),
+                        region = "ZZ",
+                        customer = "K",
+                        KEEP.OUT.ATTRS = FALSE,
+                        stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+viz_grid_lm_all %>% glimpse()
+```
+
+
+
+```{r, prediction helper function}
+
+tidy_predict <- function(mod, xnew)
+{
+  pred_df <- predict(mod, xnew, interval = "confidence") %>% 
+    as.data.frame() %>% tibble::as_tibble() %>% 
+    dplyr::select(pred = fit, ci_lwr = lwr, ci_upr = upr) %>% 
+    bind_cols(predict(mod, xnew, interval = 'prediction') %>% 
+                as.data.frame() %>% tibble::as_tibble() %>% 
+                dplyr::select(pred_lwr = lwr, pred_upr = upr))
+  
+  xnew %>% bind_cols(pred_df)
+}
+
+```
+
+
+```{r, make predictions for all additive}
+
+pred_lm_all_add <- tidy_predict(re_lm_all_add, viz_grid_lm_all)
+```
+
+
+```{r, visualizations}
+
+pred_lm_all_add %>% 
+  ggplot(mapping = aes(x = xb_04)) +
+  geom_ribbon(mapping = aes(ymin = pred_lwr, ymax = pred_upr),
+              fill = 'orange') +
+  geom_ribbon(mapping = aes(ymin = ci_lwr, ymax = ci_upr),
+              fill = 'grey') +
+  geom_line(mapping = aes(y = pred),
+            color = 'black') +
+  coord_cartesian(ylim = c(-7, 7)) +
+  facet_wrap(~xn_04, labeller = "label_both") +
+  theme_bw()
+
+```
+
+The trends are much more linear, and appear to have a negative slope as the inputs increase in value. Once again the confidence ribbon grows wider at the edges of the input showing less confidence at the edges.

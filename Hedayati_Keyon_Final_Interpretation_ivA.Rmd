@@ -1,0 +1,122 @@
+---
+title: "Interpretation ivA"
+author: "Keyon Hedayati"
+date: "4/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+library(recipes)
+library(vip)
+```
+
+
+Load the best regression models
+
+```{r, load svm}
+re_svm_radial <- readr::read_rds('svm_radial_tuned_model.rds')
+```
+
+```{r, bagged mars}
+re_bagged_MARS_tuned <- readr::read_rds('bagged_MARS_tuned.rds')
+```
+
+
+**Regression**
+
+The top two of my regression models unfortunately don't work easily with any of the variable importance functions. So I will go with my 3rd best model, the glmnet pairwise model. I will run it again here, because when I ran it earlier, I didn't save the hold out set, which I will need later.
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+
+```{r, reg_01}
+dfii <- df_all %>% 
+  mutate(y = log(response)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+```
+
+
+```{r, preprocessing metrics}
+
+my_ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, savePredictions = TRUE)
+my_metric <- 'RMSE'
+
+```
+
+
+```{r, pairwise 3rd best model}
+set.seed(888)
+glmnet_cont_pairs_cat_add <- train(y ~ customer + region + (. -customer -region)^2, 
+                        data = dfii,
+                        method = "glmnet",
+                        preProcess = c("center", "scale"),
+                        metric = my_metric,
+                        trControl = my_ctrl)
+
+glmnet_cont_pairs_cat_add
+```
+
+```{r, fit_save_01, eval=FALSE}
+glmnet_cont_pairs_cat_add %>% readr::write_rds('glmnet_cont_pairs_cat_add.rds')
+```
+
+
+```{r, glmnet pairs coeff}
+
+plot(varImp(glmnet_cont_pairs_cat_add), top=20)
+
+glmnet_cont_pairs_cat_add %>% 
+  vip(num_features = 20) +
+  theme_bw()
+```
+
+It definitly appears that some inputs are more important than others.
+
+**Classification**
+
+To be honest, most of the classification models performed very similar. The one at the 'top' of the chart though was the untuned Model Averaged Neural net, although it had a wider 95% confidence range. The tuned versions was third. But in second place is the model I made using Region Interactions with specific splines
+
+```{r, load nnet}
+re_model_avg_nnet <- readr::read_rds('model_avg_nnet_class.rds')
+```
+
+Lets try the variable importance function for this model.
+
+```{r, var importance avg nnet, eval=FALSE}
+
+plot(varImp(re_model_avg_nnet), top=20)
+
+re_model_avg_nnet %>% 
+  vip(num_features = 20) +
+  theme_bw()
+```
+It didn't work, so let try the second place model.
+
+```{r, load glmnet region spline}
+re_tune_glmnet_region_X_spline <- readr::read_rds('tune_glmnet_region_X_spline_class.rds')
+```
+
+```{r, avg nnet var, eval=TRUE}
+
+plot(varImp(re_tune_glmnet_region_X_spline), top=20)
+
+re_tune_glmnet_region_X_spline %>% 
+  vip(num_features = 20) +
+  theme_bw()
+
+```
+
+It is honestly shocking that the spline model appears to have performed so well. According to the important variables, it doesn't seem that there are that many. For the classification model, it appears the xn features dominate importance, however for the regression model, the xs features seem to dominate. However, you do find xs in both. In general I do think the sentiment derived features help predict the outputs, but not all of them. I would say about 20% of them matter, and the rest don't.
+
+

@@ -1,0 +1,747 @@
+---
+title: "Part i: Exploration"
+author: "Keyon Hedayati"
+date: "4/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading packages:
+
+```{r, load_packages}
+library(tidyverse)
+#install.packages("ggh4x")
+install.packages("ggpointdensity", repos = "http://cran.us.r-project.org")
+#library(ggh4x)
+library(ggpointdensity)
+#library(ggplot2)
+
+```
+
+Read in the data
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+
+df_all %>% glimpse()
+```
+
+
+High level summary of the data. It is important to note that **rowid**, **region**, **customer** are categorical inputs. All of the sentiment derived features that begin with **x** are continuous inputs. Additionally, **response** is the continuous output, and **outcome** is the categorical output.
+
+```{r, summary}
+df_all %>% summary()
+```
+
+
+**Categorical Visualization of Counts**
+
+
+```{r, categorical counts}
+df_all %>% ggplot(mapping=aes(x=customer)) + geom_bar()
+df_all %>% ggplot(mapping=aes(x=region)) + geom_bar()
+df_all %>% ggplot(mapping=aes(x=outcome)) + geom_bar()
+```
+
+Need to check if outcome in unbalanced.
+
+```{r, balance check outcome}
+mean(dfii$outcome == "event")
+
+```
+
+It appears the data isn't balanced, which will be important later.
+
+**Continuous Visualizations:**
+
+The AFINN derived features look gaussian like. It looks like different regions are contributing to different AFINN features. For example for xa_01, region **ZZ** contributes much less than the other two. However, it is the opposite for xa_06.
+
+
+```{r, xa histograms}
+
+df_all_pivot_xa <- df_all %>% select(starts_with("xa")) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_all_pivot_xa %>% ggplot(mapping=aes(x=value)) + geom_histogram(binwidth = 1)  + facet_wrap(~name, scales = "free")
+df_all_pivot_xa %>% ggplot(mapping=aes(x=name, y=value)) + geom_violin(fill = 'grey')  
+
+df_graph <- df_all %>% select(starts_with("xa"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer"))
+
+df_graph %>% ggplot(mapping = aes(x=value)) + geom_density(mapping = aes(group = interaction(region),
+                             color = as.factor(region)), size = 1.2, adjust = 1.35) +
+                              facet_wrap(~ name, labeller = "label_both", scales = "free") 
+
+```
+
+The Bing derived features look Gaussian like, but with some extreme outliers. Region **YY** seems like the stronger contributor for the Bing features when there is a standout. Otherwise, they are similar. 
+
+```{r, xb histograms}
+
+df_all_pivot_xb <- df_all %>% select(starts_with("xb")) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_all_pivot_xb %>% ggplot(mapping=aes(x=value)) + geom_histogram(binwidth = 1)  + facet_wrap(~name, scales = "free")
+df_all_pivot_xb %>% ggplot(mapping=aes(x=name, y=value)) + geom_violin(fill = 'grey')  
+
+df_all %>% select(starts_with("xb"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=value)) + geom_density(mapping = aes(group = interaction(region),
+                             color = as.factor(region)), size = 1.2, adjust = 1.35) +
+                              facet_wrap(~ name, labeller = "label_both", scales = "free") 
+
+```
+
+The NRC derived features look Gaussian like. For NRC lexicon, the densities all seem similar except for xn_01, xn_04, xn_08. Those features have less contribution from region **ZZ**.
+
+```{r, xn histograms}
+
+df_all_pivot_xn <- df_all %>% select(starts_with("xn")) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_all_pivot_xn %>% ggplot(mapping=aes(x=value)) + geom_histogram(binwidth = 1)  + facet_wrap(~name, scales = "free")
+df_all_pivot_xn %>% ggplot(mapping=aes(x=name, y=value)) + geom_violin(fill = 'grey')  
+df_all %>% select(starts_with("xn"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=value)) + geom_density(mapping = aes(group = interaction(region),
+                             color = as.factor(region)), size = 1.2, adjust = 1.35) +
+                              facet_wrap(~ name, labeller = "label_both", scales = "free") 
+
+```
+
+The Word 01 derived feature looks Gaussian like, but the other two features don't. They are highly skewed, and region **ZZ** isn't a strong contributor. 
+
+```{r, xw histograms}
+
+df_all_pivot_xw <- df_all %>% select(starts_with("xw")) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_all_pivot_xw %>% ggplot(mapping=aes(x=value)) + geom_histogram(binwidth = 3)  + facet_wrap(~name, scales = "free")
+df_all_pivot_xw %>% ggplot(mapping=aes(x=name, y=value)) + geom_violin(fill = 'grey')  
+
+df_all %>% select(starts_with("xw"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=value)) + geom_density(mapping = aes(group = interaction(region),
+                             color = as.factor(region)), size = 1.2, adjust = 1.35) +
+                              facet_wrap(~ name, labeller = "label_both", scales = "free") 
+
+```
+
+Some of the sentiment features are Gaussian, but the rest are highly skewed. For sentimentr derived features, region **ZZ** is a strong contributor to the density compared to the other features. 
+
+```{r, xs histograms}
+
+df_all_pivot_xs <- df_all %>% select(starts_with("xs")) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_all_pivot_xs %>% ggplot(mapping=aes(x=value)) + geom_histogram(binwidth = .03)  + facet_wrap(~name, scales = "free")
+df_all_pivot_xs %>% ggplot(mapping=aes(x=name, y=value)) + geom_violin(fill = 'grey')  
+
+df_all %>% select(starts_with("xs"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=value)) + geom_density(mapping = aes(group = interaction(region),
+                             color = as.factor(region)), size = 1.2, adjust = 1.35) +
+                              facet_wrap(~ name, labeller = "label_both", scales = "free") 
+
+```
+
+The 'response' variable doesn't appear Gaussian, but if you log transform it the distribution is more recognizable.
+
+```{r, response histograms}
+
+df_all %>% ggplot(mapping=aes(x=response)) + geom_histogram(bins = 25) 
+df_all %>% ggplot(mapping=aes(x=log(response))) + geom_histogram(binwidth = .1) 
+ 
+
+
+```
+
+
+**Conditioned Continuous Variables**
+
+The visualizations below will help me determine with inputs I would like to use as more specific spline features down the road.
+
+*Conditioned on Region and Customer*
+
+ When looking at summary stats for xa_03, region **ZZ** has the middle 50% in the positive compared to the rest of the regions. With regards to customer, the features seem similar except for xa_02. The summary stats for that feature vary when broken out by customer. Customer A has the largest middle 50% across the board.
+
+```{r, xa | region, customer}
+
+# df_all %>% select(starts_with("xa"), region) %>%  rowid_to_column() %>% pivot_longer(!c("rowid"))
+df_graph <- df_all %>% select(starts_with("xa"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "outcome"))
+
+df_graph %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(region), color= as.factor(region)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("region") +
+  scale_color_viridis_d("region") +
+  theme_bw()
+
+df_graph %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(customer), color= as.factor(customer)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("customer") +
+  scale_color_viridis_d("customer") +
+  theme_bw()
+ 
+
+```
+
+Once again customer 'A' seems to have a large range for the middle 50%, and is the only customer that the middle 50% is completely in the positive range for all of the features. For xb_02, the first half of the customers have a dramatically higher value than the later half of customers. For many of the features, the customers all look similar. The regions don't seem to matter as well. Only region **ZZ** is slightly different than some of the other regions.
+
+
+```{r, xb | region, customer}
+
+df_all %>% select(starts_with("xb"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(region), color= as.factor(region)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("region") +
+  scale_color_viridis_d("region") +
+  theme_bw()
+
+df_all %>% select(starts_with("xb"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(customer), color= as.factor(customer)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("customer") +
+  scale_color_viridis_d("customer") +
+  theme_bw()
+
+```
+
+
+The NRC lexicon seems to follow the same patterns as the features above. The 2nd feature has the most variability between the regions and customers compared to the other features. 
+
+```{r, xn | region, customer}
+
+df_all %>% select(starts_with("xn"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(region), color= as.factor(region)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("region") +
+  scale_color_viridis_d("region") +
+  theme_bw()
+
+df_all %>% select(starts_with("xn"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(customer), color= as.factor(customer)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("customer") +
+  scale_color_viridis_d("customer") +
+  theme_bw()
+
+```
+
+Region **ZZ** has the widest range for the middle 50%, and has a dramatically different median. 
+
+```{r, xw | region, customer}
+
+df_all %>% select(starts_with("xw"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(region), color= as.factor(region)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("region") +
+  scale_color_viridis_d("region") +
+  theme_bw()
+
+df_all %>% select(starts_with("xw"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(customer), color= as.factor(customer)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("customer") +
+  scale_color_viridis_d("customer") +
+  theme_bw()
+
+```
+
+Once again region **ZZ** stands out for the 2nd feature, and the last feature. This is something to note later when fitting models. 
+
+```{r, xs | region, customer}
+
+df_all %>% select(starts_with("xs"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(region), color= as.factor(region)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("region") +
+  scale_color_viridis_d("region") +
+  theme_bw()
+
+df_all %>% select(starts_with("xs"), region, customer)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer")) %>% 
+ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(customer), color= as.factor(customer)), alpha=0.35) + facet_wrap(~ name, labeller = "label_both", scales = "free") + 
+  scale_fill_viridis_d("customer") +
+  scale_color_viridis_d("customer") +
+  theme_bw()
+
+```
+
+
+*Conditioned on Outcome*
+
+Feature 2 has the widest range that includes negative and positive values with the widest middle 50%. But as we know above, it may depend on different regions or customers. It also has the 'largest' outliers.
+
+
+```{r, xa | outcome, fig.width=9}
+
+
+df_outcome <- df_all %>% select(starts_with("xa"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer","outcome"))
+
+df_outcome %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(outcome), color= as.factor(outcome)), alpha=0.35)  + 
+  theme_bw()
+
+df_outcome %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_wrap(~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( region ~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( customer ~ name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+```
+
+For the bing features, the 3rd one seems the most likely to have a negative or low value for the sentiment score. Features 2 and 3 have the largest middle 50% as well. However, it is important to note that the median for all of the features are similar between the event vs non-event.
+
+```{r, xb | outcome, fig.width=9}
+
+df_outcome_b <- df_all %>% select(starts_with("xb"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "outcome"))
+
+df_outcome_b %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(outcome), color= as.factor(outcome)), alpha=0.35)  + 
+  theme_bw()
+
+df_outcome_b %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_wrap(~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_b %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( region ~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_b %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( customer ~ name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+```
+
+
+Once again the second feature has the widest middle 50%, with the largest outliers. The median for the non-event is well outside the middle 50% for the event on features 1, 2, 3. THe NRC lexicon also has the non_event values much higher across the board compared to the event values. 
+
+```{r, xn | outcome, fig.width=9}
+
+df_outcome_n <- df_all %>% select(starts_with("xn"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "outcome")) 
+
+df_outcome_n %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(outcome), color= as.factor(outcome)), alpha=0.35)  + 
+  theme_bw()
+
+df_outcome_n %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_wrap(~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_n %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( region ~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_n %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( customer ~ name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+```
+
+It is interesting to see that for the Word count derived features, the summary statistics of event vs non_event are about the same.
+
+```{r, xw | outcome}
+
+df_outcome_w <- df_all %>% select(starts_with("xw"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "outcome")) 
+
+df_outcome_w %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(outcome), color= as.factor(outcome)), alpha=0.35)  + 
+  theme_bw()
+
+df_outcome_w %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_wrap(~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_w %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( region ~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_w %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( customer ~ name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+```
+
+
+For the *sentimentr* derived features the 3rd vs the 2nd has the largest middle 50% and some very extreme outliers on the postive side. However, the 2nd feature has larger outliers on the negative side. The medians for all of the features for event vs non_event are all about equal as well.
+
+```{r, xs | outcome, fig.width=9}
+
+df_outcome_s <- df_all %>% select(starts_with("xs"), region, customer, outcome)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "outcome")) 
+
+df_outcome_s %>% ggplot(mapping = aes(x=as.factor(name), y=value)) + geom_boxplot(mapping=aes(fill= as.factor(outcome), color= as.factor(outcome)), alpha=0.35)  + 
+  theme_bw()
+
+df_outcome_s %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_wrap(~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_s %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( region ~name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+
+df_outcome_s %>% ggplot(mapping = aes(x=value)) +
+  geom_freqpoly(size = 1.2, bins = 21, mapping = aes(color = outcome, y = stat(density))) +
+  facet_grid( customer ~ name, scales = 'free') +
+  scale_color_brewer(palette = 'Set1')
+```
+
+
+**Correlation**
+
+```{r, all input correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("x")) %>% cor(), type='upper', method='square')
+
+```
+
+
+```{r, xa correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("xa")) %>% cor(), type='upper', method='square')
+
+```
+
+
+
+```{r, xb correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("xb")) %>% cor(), type='upper', method='square')
+
+```
+
+
+
+
+```{r, xn correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("xn")) %>% cor(), type='upper', method='square')
+
+```
+
+
+
+
+```{r, xw correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("xw")) %>% cor(), type='upper', method='square')
+
+```
+
+
+
+
+```{r, xs correlation}
+
+corrplot::corrplot(df_all %>% select(starts_with("xs")) %>% cor(), type='upper', method='square')
+
+```
+
+**Input to Output Relationships**
+
+
+```{r, xa in/out | region}
+df_dense_a <- df_all %>% select(starts_with("xa"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response"))
+
+df_all %>% select(starts_with("xa"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response")) %>% 
+  ggplot(mapping = aes(x=value, y=log(response))) + geom_pointdensity() + facet_wrap(~name, scale='free')
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  #geom_density(mapping = aes(group = interaction(region), color = as.factor(region)), size = 1.2, adjust = 1.35) +
+  #facet_grid( region ~ name, labeller = "label_both", scales = "free", space = "free")
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+
+```{r, xb in/out | region}
+df_dense_b <- df_all %>% select(starts_with("xb"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response"))
+
+df_all %>% select(starts_with("xb"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response")) %>% 
+  ggplot(mapping = aes(x=value, y=log(response))) + geom_pointdensity() + facet_wrap(~name, scale='free')
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  #geom_density(mapping = aes(group = interaction(region), color = as.factor(region)), size = 1.2, adjust = 1.35) +
+  #facet_grid( region ~ name, labeller = "label_both", scales = "free", space = "free")
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm,  mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=log(response))) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+
+```{r, xn in/out | region}
+df_dense_n <- df_all %>% select(starts_with("xn"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response"))
+
+df_all %>% select(starts_with("xn"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response")) %>% 
+  ggplot(mapping = aes(x=value, y=log(response))) + geom_pointdensity() + facet_wrap(~name, scale='free')
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm,  mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=log(response))) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+```{r, xw in/out | region}
+df_dense_w <- df_all %>% select(starts_with("xw"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response"))
+
+df_all %>% select(starts_with("xw"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response")) %>% 
+  ggplot(mapping = aes(x=value, y=log(response))) + geom_pointdensity() + facet_wrap(~name, scale='free')
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm,  mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=log(response))) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+```{r, xs in/out | region}
+df_dense_s <- df_all %>% select(starts_with("xs"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response"))
+
+df_all %>% select(starts_with("xs"), region, customer, response)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response")) %>% 
+  ggplot(mapping = aes(x=value, y=log(response))) + geom_pointdensity() + facet_wrap(~name, scale='free')
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm,  mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=log(response))) + 
+  geom_smooth( mapping = aes(color = region)) +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+
+
+```{r, xa in/out | customer, fig.height=7, fig.width=9}
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_a %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+```{r, xb in/out | customer, fig.height=7, fig.width=9}
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_b %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+```{r, xn in/out | customer, fig.height=7, fig.width=9}
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_n %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+
+
+```{r, xw in/out | customer, fig.height=7, fig.width=9}
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_w %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+```{r, xs in/out | customer, fig.height=7, fig.width=9}
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_point(mapping = aes(color = region, alpha=.1)) +
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=response)) + 
+  geom_smooth(method = lm, mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+
+df_dense_s %>% ggplot(mapping = aes(x=value, y=log10(response))) + 
+  geom_smooth( mapping = aes(color = customer)) +
+  scale_color_viridis_d("customer", option = 'inferno') +
+  facet_wrap( ~ name, labeller = "label_both", scales = "free")
+  
+```
+
+**Continuous Input and Binary Output**
+
+```{r, binary to numbers}
+df_y <- df_all %>% mutate(y = ifelse(outcome == "event", 1, 0))
+```
+
+
+```{r, xa continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xa"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xa"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+```{r, xb continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xb"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xb"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+
+```{r, xn continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xn"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xn"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+```{r, xw continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xw"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xw"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+```{r, xs continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xs"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xs"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```

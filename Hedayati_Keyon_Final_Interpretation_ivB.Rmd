@@ -1,0 +1,134 @@
+---
+title: "Interpretation ivB"
+author: "Keyon Hedayati"
+date: "4/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load packages}
+library(tidyverse)
+library(caret)
+library(ggpointdensity)
+library(yardstick)
+```
+
+Load the entire dataset
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+Load up the best performing regression and classification models. However, for regression, I will load the 3rd best. 
+
+**Regression**
+
+```{r, load glmnet}
+re_glmnet_cont_pairs_cat_add <- readr::read_rds('glmnet_cont_pairs_cat_add.rds')
+```
+
+
+Will pull out the best tuned results
+```{r, glmnet predictions}
+
+glmnet_pred_results <- re_glmnet_cont_pairs_cat_add$pred %>% tibble::as_tibble() %>% 
+              filter(alpha == re_glmnet_cont_pairs_cat_add$bestTune$alpha,
+                     lambda == re_glmnet_cont_pairs_cat_add$bestTune$lambda) %>% 
+              select(pred, obs, rowIndex, Resample) %>% 
+              mutate(model_name = "GLMNET") 
+
+glmnet_pred_results
+```
+
+Now we will connect them to the actual inputs to see how they performed.
+
+```{r, original data clean}
+
+df_new <- df_all %>% 
+  mutate(y = log(response), rowIndex = rowid) %>% 
+  select(region, customer, starts_with('x'), y, rowIndex)
+
+```
+
+Merge the predictions with the original dataframe
+
+```{r, merge}
+
+pred_df <- merge(df_new, glmnet_pred_results, by= "rowIndex")
+pred_df %>% head()
+
+```
+
+Lets see how the predictions look compared to the observations
+
+```{r, pred to obs plot}
+
+pred_df %>% ggplot(mapping = aes(x=obs, y=pred, alpha=0.3)) +
+  geom_point() +
+  coord_equal()+
+  geom_abline(slope = 1)+
+  facet_wrap(~customer) + 
+  geom_pointdensity()
+
+```
+
+Maybe it is an obvious guess, but by looking at the data **Other** appears to be the hardest to predict with the most 'noise' around the line.
+
+**Classification**
+
+Now lets try the same thing with the best classification model. Remember, many of them were similar, we just pulled the top of the chart. The tuned version had a narrower confidence interval though.
+
+```{r, load nnet}
+re_model_avg_nnet <- readr::read_rds('model_avg_nnet_class.rds')
+```
+
+Lest see the best tuning parameters
+
+```{r, best class}
+re_model_avg_nnet$bestTune
+
+re_model_avg_nnet$pred %>% head()
+```
+Now we pull out the predictions with best tune
+
+```{r, calss pred}
+
+avg_nnet_pred_results <- re_model_avg_nnet$pred %>% tibble::as_tibble() %>% 
+              filter(size == re_model_avg_nnet$bestTune$size,
+                     decay == re_model_avg_nnet$bestTune$decay,
+                     bag == re_model_avg_nnet$bestTune$bag) %>% 
+              select(pred, obs,event, non_event, rowIndex, Resample) %>% 
+              mutate(model_name = "AVG_NNET") 
+
+avg_nnet_pred_results
+
+```
+
+Now we merge them like we did before
+
+```{r, merge class}
+
+pred_class_df <- merge(df_new, avg_nnet_pred_results, by= "rowIndex")
+pred_class_df %>% head()
+
+```
+
+```{r, roc by customer}
+
+pred_class_df %>% 
+  group_by(customer) %>% 
+  roc_curve(obs, event) %>% 
+  ggplot(mapping = aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path(mapping = aes(color = customer)) +
+  geom_abline(slope = 1, intercept = 0, linetype = 'dotted') +
+  coord_equal() +
+  facet_wrap(~customer) +
+  theme_bw()
+
+```
+
+This gives a slightly different picture than the regression model. According to this, **customer B** is hardest to predict, and **Other** is maybe second place.
+

@@ -1,0 +1,207 @@
+---
+title: "Regression"
+author: "Keyon Hedayati"
+date: "4/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load_packages}
+library(tidyverse)
+library(recipes)
+library(caret)
+library(coefplot)
+
+```
+
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+df_all %>% glimpse()
+```
+
+
+```{r, reg_01}
+dfii <- df_all %>% 
+  mutate(y = log(response)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+dfii %>% glimpse()
+```
+
+**Linear Models**
+
+```{r, regression - iiA - lm basic methods}
+
+# Cat only - linear additive
+set.seed(888)
+lm_cat_add <- lm(y ~ region + customer,
+                       data = dfii)
+
+# Continue only additive
+dfii_cont_only <- dfii %>% select(!c(customer, region))
+set.seed(888)
+lm_cont_add <- lm(y ~ ., dfii_cont_only) 
+
+# all continous and categorical
+set.seed(888)
+lm_all_add <- lm(y ~ ., data = dfii)
+
+# region:continous
+dfii_cont_region <- dfii %>% select(!c(customer))
+set.seed(888)
+lm_cont_x_region <- lm(y ~ (region) * (.), data = dfii_cont_region) 
+
+# customer:continous
+dfii_cont_cust <- dfii %>% select(!c(region))
+set.seed(888)
+lm_cont_x_cust <- lm(y ~ (customer) * (.), data = dfii_cont_cust) 
+
+# all pairwise not cat
+set.seed(888)
+lm_all_pairs_cont <- lm(y ~ .^2, data = dfii_cont_only) 
+
+# my choice #1, customer interaction with 'significant' feature splines from exploration
+set.seed(888)
+lm_cust_X_sig_splines <- lm( y ~ 
+                    (customer) *
+                     splines::ns(xa_02, df = 4) +
+                     splines::ns(xb_02, df = 4) +
+                     splines::ns(xb_05, df = 4) +
+                     splines::ns(xn_02, df = 4) +
+                     splines::ns(xw_02, df = 4) +
+                     splines::ns(xw_03, df = 4) +
+                     splines::ns(xs_02, df = 4) +
+                     splines::ns(xs_03, df = 4) +
+                     splines::ns(xs_05, df = 4) +
+                     splines::ns(xs_06, df = 4),
+                    data = dfii_cont_cust)
+  
+
+# my choice #2, continuous additive,  with 'significant' feature splines from exploration
+set.seed(888)
+lm_region_X_sig_splines <- lm( y ~ 
+                    (region) *
+                     splines::ns(xa_02, df = 4) +
+                     splines::ns(xb_02, df = 4) +
+                     splines::ns(xb_05, df = 4) +
+                     splines::ns(xn_02, df = 4) +
+                     splines::ns(xw_02, df = 4) +
+                     splines::ns(xw_03, df = 4) +
+                     splines::ns(xs_02, df = 4) +
+                     splines::ns(xs_03, df = 4) +
+                     splines::ns(xs_05, df = 4) +
+                     splines::ns(xs_06, df = 4),
+                    data = dfii_cont_region)
+
+# my choice #3, continuous interactions with 'significant' features from exploration and previous models
+set.seed(888)
+lm_cont_customer_add_region_X_sig_splines <- lm( y ~ 
+                    (. -xa_02 -xb_02 -xb_05 -xn_02 -xw_02 -xw_03 -xs_02 -xs_03 -xs_05 -xs_06) + region *
+                     splines::ns(xa_02, df = 4) +
+                     splines::ns(xb_02, df = 4) +
+                     splines::ns(xb_05, df = 4) +
+                     splines::ns(xn_02, df = 4) +
+                     splines::ns(xw_02, df = 4) +
+                     splines::ns(xw_03, df = 4) +
+                     splines::ns(xs_02, df = 4) +
+                     splines::ns(xs_03, df = 4) +
+                     splines::ns(xs_05, df = 4) +
+                     splines::ns(xs_06, df = 4) ,
+                    data = dfii)
+
+
+```
+
+
+**Performance**
+
+```{r, broom wrapper}
+
+# pass in model to pull out relevant metrics
+extract_metrics <- function(mod, mod_name)
+{
+  broom::glance(mod) %>% mutate(mod_name = mod_name)
+}
+
+```
+
+
+
+```{r, compile metrics df}
+all_metrics <- purrr::map2_dfr(list(lm_all_add, lm_all_pairs_cont, lm_cat_add, lm_cust_X_sig_splines, 
+                                    lm_region_X_sig_splines, lm_cont_customer_add_region_X_sig_splines, 
+                                    lm_cont_x_cust, lm_cont_x_region, lm_cont_add),
+                               c("lm_all_add", "lm_all_pairs_cont", "lm_cat_add", "lm_cust_X_sig_splines", 
+                                    "lm_region_X_sig_splines", "lm_cont_customer_add_region_X_sig_splines", 
+                                    "lm_cont_x_cust", "lm_cont_x_region", "lm_cont_add"),
+                               extract_metrics)
+
+
+all_metrics %>% glimpse()
+
+RMSE_vector <- c(sqrt(mean(lm_all_add$residuals^2)),
+                  sqrt(mean(lm_all_pairs_cont$residuals^2)),
+                  sqrt(mean(lm_cat_add$residuals^2)), 
+                  sqrt(mean(lm_cust_X_sig_splines$residuals^2)), 
+                  sqrt(mean(lm_region_X_sig_splines$residuals^2)),                                                                                                        sqrt(mean(lm_cont_customer_add_region_X_sig_splines$residuals^2)),
+                  sqrt(mean(lm_cont_x_cust$residuals^2)),
+                  sqrt(mean(lm_cont_x_region$residuals^2)),
+                  sqrt(mean(lm_cont_add$residuals^2)))
+
+# I don't think it is calculating RMSE accurately so not using it
+all_metrics %>% mutate(RMSE = RMSE_vector)
+
+```
+
+
+```{r, metrics visualization, fig.height=7}
+
+all_metrics %>% 
+  select(mod_name, df, r.squared, AIC, BIC) %>% 
+  pivot_longer(!c("mod_name", "df")) %>% 
+  ggplot(mapping = aes(x = mod_name, y = value)) +
+  geom_point(size = 5) +
+  facet_wrap(~name, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+Looking at the performance above, the best performer by AIC/BIC is *lm_all_add* (All Additive). Additionally I would say *lm_cont_x_region* also performed well with a good R-squared. As far as my choice, I think *lm_cont_customer_add_region_X_sig_splines* performed the best, and had the best AIC, 2nd best BIC with a top 3 Rsquared. So that is my second choice. 
+
+**Coefficient Summaries**
+
+Now we will look at the coefficients of the top 3. 
+```{r, coefficient of top 1, , fig.height=9}
+
+coefplot(lm_all_add)
+```
+
+```{r, coefficient of top 2, fig.height=9}
+
+coefplot(lm_cont_x_region)
+```
+
+```{r, coefficient of my choice, fig.height=9}
+
+coefplot(lm_cont_customer_add_region_X_sig_splines)
+```
+
+
+
+It appears that there are a few inputs specifically that are most important, and they appear in all of the models. A few of the 'xs' features, one of the 'xb', and some of the 'xn'. It also seems like the interaction between region and features is of importance, and maybe customers on their own.
+
+
+```{r}
+
+lm_all_add %>% readr::write_rds('lm_all_additive.rds')
+lm_cont_customer_add_region_X_sig_splines %>% readr::write_rds('lm_cont_cust_add_region_X_splines.rds')
+
+```
+

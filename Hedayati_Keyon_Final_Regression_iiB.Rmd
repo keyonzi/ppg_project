@@ -1,0 +1,190 @@
+---
+title: "Regression iiB"
+author: "Keyon Hedayati"
+date: "4/19/2022"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load_packages}
+library(tidyverse)
+library(recipes)
+library(caret)
+library(coefplot)
+library(rstanarm)
+
+
+```
+
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+
+```{r, reg_01}
+dfii <- df_all %>% 
+  mutate(y = log(response)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+```
+
+**Regression part iiB**
+
+Bayesian of the winner from iiA
+
+```{r, bayesian all inputs additive}
+
+bayes_lm_all <- stan_lm(y ~ .,
+                        data = dfii,
+                        prior = R2(location = 0.7),
+                        seed=888)
+
+```
+
+
+```{r, bayes summary stats for all add}
+
+bayes_lm_all %>% summary()
+rstanarm::bayes_R2(bayes_lm_all) %>% quantile(c(0.05, 0.5, 0.95))
+```
+
+
+
+Bayesian of 3rd best from iiA. I chose this one because it was one I came up with on my own, and still performed well.
+
+```{r, bayesian all cont additive with region:significant splines}
+
+dfii_cont_cust <- dfii %>% select(!c(customer))
+
+# this one works with .7
+bayes_cont_add_region_X_splines <- stan_lm(  y ~ 
+                    (. -xa_02 -xb_02 -xb_05 -xn_02 -xw_02 -xw_03 -xs_02 -xs_03 -xs_05 -xs_06) + region *
+                     splines::ns(xa_02, df = 4) +
+                     splines::ns(xb_02, df = 4) +
+                     splines::ns(xb_05, df = 4) +
+                     splines::ns(xn_02, df = 4) +
+                     splines::ns(xw_02, df = 4) +
+                     splines::ns(xw_03, df = 4) +
+                     splines::ns(xs_02, df = 4) +
+                     splines::ns(xs_03, df = 4) +
+                     splines::ns(xs_05, df = 4) +
+                     splines::ns(xs_06, df = 4),
+                    data = dfii, 
+                    prior = R2(location = 1), seed=888)
+
+
+```
+
+
+
+```{r, bayes summary stats for region and splines}
+bayes_cont_add_region_X_splines %>% summary()
+rstanarm::bayes_R2(bayes_cont_add_region_X_splines) %>% quantile(c(0.05, 0.5, 0.95))
+```
+
+**Choosing Best Model**
+
+
+```{r, visualization R2}
+
+purrr::map2_dfr(list(bayes_lm_all, bayes_cont_add_region_X_splines),
+                c("bayes_lm_all", "bayes_cont_add_region_X_splines"),
+                function(mod, mod_name){tibble::tibble(rsquared = bayes_R2(mod)) %>% 
+                    mutate(model_name = mod_name)}) %>% 
+  ggplot(mapping = aes(x = rsquared)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  coord_cartesian(xlim = c(0, 1)) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+
+```
+
+Posterior distribution of the noise $$\sigma$$.
+
+```{r, visualization of sigma}
+purrr::map2_dfr(list(bayes_lm_all, bayes_cont_add_region_X_splines),
+                c("bayes_lm_all", "bayes_cont_add_region_X_splines"),
+                function(mod, mod_name){as.data.frame(mod) %>% tibble::as_tibble() %>% 
+                    select(sigma) %>% 
+                    mutate(model_name = mod_name)}) %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_freqpoly(bins = 55,
+                 mapping = aes(color = model_name),
+                 size = 1.1) +
+  ggthemes::scale_color_colorblind("Model") +
+  theme_bw()
+```
+
+
+**Model Performance**
+
+
+```{r, loo performance}
+
+loo_lm_all <- loo(bayes_lm_all)
+loo_cont_add_region_X_splines <- loo(bayes_cont_add_region_X_splines, k_threshold = 0.7)
+
+```
+
+According to Loo below, the all continuous additive with region interactions with specific splines is the winner.
+
+```{r, loo compare}
+
+loo_compare(loo_lm_all, loo_cont_add_region_X_splines)
+loo_model_weights(list(`lm_all` = loo_lm_all, `spline` = loo_cont_add_region_X_splines))
+
+```
+
+
+**Coefficients Visualization**
+
+Below is the best model:
+
+```{r, import lm model}
+re_lm_cont_cust_add_region_X_splines <- readr::read_rds('lm_cont_cust_add_region_X_splines.rds')
+```
+
+
+```{r, lm_all coefficients, fig.height=9}
+
+plot(bayes_cont_add_region_X_splines, pars = names(bayes_cont_add_region_X_splines$coefficients)) +
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed", size = 1.0) +
+  theme_bw()
+
+```
+
+
+
+
+*Posterior uncertainty on the noise $$\sigma$$*
+
+The MLE on $$\sigma$$ for lm() is close, but higher than the posterior uncertainty on $$\sigma$$. I also don't think the uncertainty is very high, and it's pretty precise. The uncertainty is represented by the width of the histogram and the value of sigma.
+
+```{r, uncertainty on noise}
+as.data.frame(bayes_cont_add_region_X_splines) %>% tibble::as_tibble() %>% 
+  ggplot(mapping = aes(x = sigma)) +
+  geom_histogram(bins = 55) +
+  geom_vline(xintercept = stats::sigma(re_lm_cont_cust_add_region_X_splines), 
+             color = "red", linetype = "dashed", size = 1.1) +
+  geom_vline(xintercept = stats::sigma(bayes_cont_add_region_X_splines),
+             color = "darkorange", linetype = "dashed", size = 1.1) +
+  theme_bw()
+```
+
+
+```{r, save models}
+
+bayes_lm_all %>% readr::write_rds('bayes_lm_all_additive.rds')
+
+bayes_cont_add_region_X_splines %>% readr::write_rds('bayes_cont_add_region_X_splines.rds')
+
+```
+

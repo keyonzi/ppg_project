@@ -1,0 +1,229 @@
+---
+title: "Classification iiB"
+author: "Keyon Hedayati"
+date: "4/23/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load Packages
+```{r, load_packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+library(rstanarm)
+library(vip)
+```
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_train.csv", col_names = TRUE)
+```
+
+Clean the data for classification:
+
+```{r, class_03}
+dfiiiA <- df_all %>% 
+  mutate(y = ifelse(outcome == 'event', 1, 0)) %>% 
+  select(region, customer, starts_with('x'), y)
+
+dfiiiA %>% glimpse()
+```
+
+
+**Choosing Best Model**
+
+My choice for the second model from iiiA was based on a few things. Many of the models had a low AIC/BIC, including the one I selected. I selected it because it performed well, and it made sense for the exploratory analysis. It had one of the lower AIC/BIC,  and 3rd lowest deviance, and a good logLik.
+
+
+```{r, region interact with spline matrix}
+Xmat_region_X_cont <- model.matrix(y ~ (region) * (. -customer), data = dfiiiA)
+```
+
+
+```{r, info for spline}
+
+info_reg <- list(
+  yobs = dfiiiA$y,
+  design_matrix = Xmat_region_X_cont,
+  mu_beta = 0,
+  tau_beta = 5
+)
+```
+
+
+```{r, logpost function}
+logistic_logpost <- function(unknowns, my_info)
+{
+  # extract the design matrix and assign to X
+  X <- my_info$design_matrix
+  
+  length_beta <- ncol(X)
+  
+  # extract the beta parameters from the `unknowns` vector
+  beta_v <- unknowns[1:length_beta]
+  
+  # calculate the linear predictor
+  eta <- X %*% as.matrix(beta_v)
+  
+  # calculate the event probability
+  mu <- boot::inv.logit(eta)
+  
+  # evaluate the log-likelihood
+  log_lik <- sum(dbinom(x = my_info$yobs,
+                        size = 1,
+                        prob = mu,
+                        log = TRUE))
+  
+  # evaluate the log-prior
+  log_prior <- sum(dnorm(x = beta_v,
+                         mean = my_info$mu_beta,
+                         sd = my_info$tau_beta,
+                         log = TRUE))
+  
+  # sum together
+  log_lik + log_prior
+}
+```
+
+
+
+```{r, laplace function}
+my_laplace <- function(start_guess, logpost_func, ...)
+{
+  # code adapted from the `LearnBayes`` function `laplace()`
+  fit <- optim(start_guess,
+               logpost_func,
+               gr = NULL,
+               ...,
+               method = "BFGS",
+               hessian = TRUE,
+               control = list(fnscale = -1, maxit = 1001))
+  
+  mode <- fit$par
+  post_var_matrix <- -solve(fit$hessian)
+  p <- length(mode)
+  int <- p/2 * log(2 * pi) + 0.5 * log(det(post_var_matrix)) + logpost_func(mode, ...)
+  # package all of the results into a list
+  list(mode = mode,
+       var_matrix = post_var_matrix,
+       log_evidence = int,
+       converge = ifelse(fit$convergence == 0,
+                         "YES", 
+                         "NO"),
+       iter_counts = as.numeric(fit$counts[1]))
+}
+```
+
+
+```{r, laplace 4 spline}
+laplace_region_X_cont <- my_laplace(rep(0, ncol(Xmat_region_X_cont)), logistic_logpost, info_reg)
+
+```
+
+```{r, upper and lower bounds of Beta for spline}
+tibble::tibble(
+  post_mean = laplace_region_X_cont$mode,
+  post_sd = sqrt(diag(laplace_region_X_cont$var_matrix))
+) %>% 
+  tibble::rowid_to_column("beta_number") %>% 
+  mutate(beta_id = beta_number - 1,
+         post_lwr = post_mean - 2*post_sd,
+         post_upr = post_mean + 2*post_sd) %>% 
+  select(beta_id, post_mean, post_lwr, post_upr)
+```
+
+*Winner from iiiA*
+
+```{r, additive matrix}
+Xmat_additive <- model.matrix(y ~ (.), data = dfiiiA)
+```
+
+
+```{r, all additive info}
+
+info_add <- list(
+  yobs = dfiiiA$y,
+  design_matrix = Xmat_additive,
+  mu_beta = 0,
+  tau_beta = 5
+)
+```
+
+
+```{r, laplace result for all additive}
+laplace_all_add <- my_laplace(rep(0, ncol(Xmat_additive)), logistic_logpost, info_add)
+```
+ 
+ 
+ 
+```{r, upper and lower bounds of Beta for additive}
+tibble::tibble(
+  post_mean = laplace_all_add$mode,
+  post_sd = sqrt(diag(laplace_all_add$var_matrix))
+) %>% 
+  tibble::rowid_to_column("beta_number") %>% 
+  mutate(beta_id = beta_number - 1,
+         post_lwr = post_mean - 2*post_sd,
+         post_upr = post_mean + 2*post_sd) %>% 
+  select(beta_id, post_mean, post_lwr, post_upr)
+```
+
+**Model Performance**
+
+
+```{r, model performance by weight}
+model_log_evidence <- purrr::map_dbl(list(laplace_all_add, laplace_region_X_cont),
+                                     "log_evidence")
+
+signif(exp(model_log_evidence) / sum(exp(model_log_evidence)), 4)
+```
+
+The best model is the All Additive Model judging by the weight.
+
+
+*Visualizing Coefficients*
+
+```{r,  coefficients function}
+
+viz_post_coefs <- function(post_means, post_sds, xnames)
+{
+  tibble::tibble(
+    mu = post_means,
+    sd = post_sds,
+    x = xnames
+  ) %>% 
+    mutate(x = factor(x, levels = xnames)) %>% 
+    ggplot(mapping = aes(x = x)) +
+    geom_hline(yintercept = 0, color = 'grey', linetype = 'dashed') +
+    geom_point(mapping = aes(y = mu)) +
+    geom_linerange(mapping = aes(ymin = mu - 2 * sd,
+                                 ymax = mu + 2 * sd,
+                                 group = x)) +
+    labs(x = 'feature', y = 'coefficient value') +
+    coord_flip() +
+    theme_bw()
+}
+```
+
+
+
+```{r, visualize winner, fig.height=9}
+
+viz_post_coefs(laplace_all_add$mode[1:ncol(Xmat_additive)],
+               sqrt(diag(laplace_all_add$var_matrix)[1:ncol(Xmat_additive)]),
+               colnames(Xmat_additive))
+```
+
+
+
+```{r, save winner, eval=FALSE}
+
+laplace_all_add %>% readr::write_rds('laplace_all_additive.rds')
+laplace_region_X_cont %>% readr::write_rds('laplace_region_X_cont.rds')
+
+```
+
+ 

@@ -1,0 +1,556 @@
+---
+title: "Extra Credit"
+author: "Keyon Hedayati"
+date: "4/27/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load_packages}
+library(tidyverse)
+library(caret)
+library(coefplot)
+library(recipes)
+library(visdat)
+```
+
+```{r, read_data_01}
+df_all <- readr::read_csv("final_project_bonus.csv", col_names = TRUE)
+```
+
+
+```{r, summary}
+df_all %>% summary()
+```
+
+
+```{r, categorical counts}
+df_all %>% ggplot(mapping=aes(x=customer)) + geom_bar()
+df_all %>% ggplot(mapping=aes(x=region)) + geom_bar()
+df_all %>% ggplot(mapping=aes(x=outcome)) + geom_bar()
+```
+
+
+As you can see the data is massively imbalanced. Customer S and U barely account for anything, and the ratio of event to non-event is quite dramatic.
+
+Lets see if we have any missing data and what it looks like.
+
+```{r, missing}
+visdat::vis_miss(df_all, cluster=TRUE) +
+  theme(axis.text.x = element_text(size = 6.5, angle = 90))
+```
+
+Well that is some good news, nothing is missing. Lets look at customer via proportion
+
+```{r, proportion}
+df_all %>% 
+  mutate(customer = forcats::fct_infreq(customer)) %>% 
+  ggplot(mapping = aes(x = customer, y = stat(prop), group = 1)) +
+  geom_bar() +
+  coord_flip() +
+  labs(x = "") +
+  theme_bw()
+```
+
+Confirms what we already know, and verifies that G is also much higher than the rest. But lets look at our two categorical together in combination.
+
+```{r}
+df_all %>% 
+  mutate(customer = forcats::fct_lump_prop(customer, 0.05),
+         region = forcats::fct_lump_prop(region, 0.05)) %>% 
+  count(customer, region) %>% 
+  mutate(prop_total = n / sum(n)) %>% 
+  ggplot(mapping = aes(x = customer, y = region)) +
+  geom_tile(mapping = aes(fill = cut(prop_total,
+                                     breaks = seq(0, 0.18, by = 0.03))),
+            color = "black") +
+  geom_text(mapping = aes(label = signif(prop_total, 3),
+                          color = prop_total < 0.09)) +
+  scale_fill_viridis_d("Proportion") +
+  scale_color_manual(guide = 'none',
+                     values = c("TRUE" = "white", 
+                                "FALSE" = "black")) +
+  theme_bw()
+```
+
+
+As you would suspect, not all customer groups exist in all regions. So an interaction between the two may not be the best idea. We should keep that in mind. The proportions are all wacky as well.
+
+Even though we've already 'explored' the data, lets look at it again in relation to the outcome.
+
+```{r, binary to numbers}
+df_y <- df_all %>% mutate(y = ifelse(outcome == "event", 1, 0))
+```
+
+
+```{r, xa continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xa"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xa"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+```{r, xb continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xb"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xb"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+
+```{r, xn continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xn"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xn"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+```{r, xw continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xw"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xw"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+```{r, xs continous in & bi out | region/customer, fig.width=9, fig.height=7}
+
+df_y %>% select(starts_with("xs"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=region)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(region~name, scales = 'free')
+
+df_y %>% select(starts_with("xs"), region, customer, response, y)  %>%  rowid_to_column()  %>% pivot_longer(!c("rowid", "region", "customer", "response", "y")) %>% 
+  ggplot(mapping = aes(x=value, y=y, alpha=0.1, color=customer)) +
+  geom_jitter(height = 0.04) +
+  facet_grid(customer~name, scales = 'free')
+
+```
+
+
+Customers S and U have just a couple of data points for some of the features...
+
+Lets make a model without accounting for class imbalance for now, so we can compare. Just a basic all additive.
+
+```{r, control variables}
+my_ctrl <- trainControl(method = 'cv', number = 5,
+                             summaryFunction = twoClassSummary,
+                             classProbs = TRUE,
+                             savePredictions = TRUE)
+my_metric <- "ROC"
+```
+
+
+```{r, default model}
+
+default_model_all_add <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(response) %>% 
+  step_other(region, customer, threshold = 0.05) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors())
+
+default_model_all_add %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names()
+
+```
+
+
+Lets train, but we will use elastic net at least
+
+```{r, fit glmnet add all}
+set.seed(98123)
+fit_glmnet_add_all <- train(default_model_all_add, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glmnet_add_all
+```
+
+Without a tuning grid, it didn't perform that badly compared to the 'clean' data we worked with. But lets do some interactions with region and customer
+
+```{r, region model}
+
+default_model_region_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(customer, response) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("region"):starts_with("x"))
+
+default_model_region_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names()
+
+```
+
+
+```{r, fit glmnet region X}
+set.seed(98123)
+fit_glmnet_region_X <- train(default_model_region_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glmnet_region_X
+```
+
+
+Here we start to see a much lower ROC when we look at region interaction. But lets check out customer as well
+
+
+```{r, customer model}
+
+default_model_customer_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(region, response) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+default_model_customer_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, fit glmnet customer X}
+set.seed(98123)
+fit_glmnet_customer_X <- train(default_model_customer_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+fit_glmnet_customer_X
+```
+Notice we get a lot of warnings when running this model, because some of the factors are sparse like S.
+
+We see the same diminished ROC values. We will use a new package that will help us with the upsampling in recipe called *themis*.
+
+```{r, load themis}
+library(themis)
+
+```
+
+
+First lets see if we can make improvements with lumping customers. We will lump everything with less than 5% proportion which will grab the two lowest.
+
+```{r, customer model w lump}
+
+lump_model_customer_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(region, response) %>% 
+  step_other(customer, threshold = 0.05) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+lump_model_customer_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, fit glmnet customer X}
+set.seed(98123)
+lump_glmnet_customer_X <- train(lump_model_customer_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+lump_glmnet_customer_X
+```
+
+
+Now lets try with upsampling instead. We will upsample the lower class to 50%, so that it is 'picked' more often. We will try again with full 100
+
+```{r, customer model w up 50}
+
+upsample_50_model_customer_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(region, response) %>% 
+  step_upsample(customer, over_ratio = 0.5) %>%
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+upsample_50_model_customer_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, up 50 glmnet customer X}
+set.seed(98123)
+up_50_glmnet_customer_X <- train(upsample_50_model_customer_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+up_50_glmnet_customer_X
+```
+
+
+```{r, customer model w up 100}
+
+upsample_100_model_customer_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(region, response) %>% 
+  step_upsample(customer, over_ratio = 1) %>%
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+upsample_100_model_customer_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, up 50 glmnet customer 100}
+set.seed(98123)
+up_100_glmnet_customer_X <- train(upsample_100_model_customer_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+up_100_glmnet_customer_X
+```
+
+
+Now lets take a look at the near zero variance features. It will remove sparse features are ones that are highly imbalanced.
+
+
+```{r, customer model w nzv}
+
+nzv_model_customer_X <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(region, response) %>% 
+  step_nzv(all_predictors()) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+nzv_model_customer_X %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, nzv glmnet customer}
+set.seed(98123)
+nzv_glmnet_customer_X <- train(nzv_model_customer_X, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+nzv_glmnet_customer_X
+```
+
+
+Now that we have some powerful tools to help deal with imbalances, lets see what happens when we interact region AND customers. Lets try with near zero variance. There will be some features with no values, so even upsampling wont really work that well. But we can try near zero and see what happens.
+
+```{r, customer X region w nzv}
+
+nzv_model_customer_X_region <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(response) %>% 
+  step_nzv(all_predictors()) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("region"):starts_with("x")) 
+
+
+nzv_model_customer_X_region %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, nzv glmnet ustomer X region}
+set.seed(98123)
+nzv_glmnet_customer_X_region <- train(nzv_model_customer_X_region, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+nzv_glmnet_customer_X_region
+```
+
+Lets try with downsampling  to 100% then to 200% of minority with customer interactions. We still have to upsample the lower classes, so we will do both.
+
+```{r, customer X w down 100}
+
+down_100_model_customer_X_region <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_downsample(customer, under_ratio = 1) %>%
+  step_upsample(customer, over_ratio = .5) %>%
+  step_rm(region, response) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(~starts_with("customer"):starts_with("x"))
+
+
+down_100_model_customer_X_region %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, up 50 glmnet ustomer X region}
+set.seed(98123)
+down_100_glmnet_customer_X_region <- train(down_100_model_customer_X_region, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+down_100_glmnet_customer_X_region
+```
+
+Notice we have a lot more warnings than usual, because it isn't enough to just downsample the majority category.
+
+Last but not least, lets just do all of the same sampling techniques for all additive, so we can compare some apples to apples.
+
+```{r, all add up 50}
+
+up_50_model_all_add <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(response) %>% 
+  step_upsample(customer, over_ratio = .5) %>%
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) 
+  
+
+
+up_50_model_all_add %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, up 50 glmnet ustomer X region}
+set.seed(98123)
+up_50_glmnet_all_add <- train(up_50_model_all_add, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+up_50_glmnet_all_add
+```
+
+```{r, all add nzv}
+
+nzv_model_all_add <- recipe(outcome ~ .,
+                       data = df_all) %>% 
+  step_rm(response) %>% 
+  step_nzv(all_predictors()) %>% 
+  step_center(all_numeric_predictors()) %>% 
+  step_scale(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) 
+  
+
+
+nzv_model_all_add %>% 
+  prep(training = df_all, retain = TRUE) %>% 
+  bake(new_data = NULL) %>% 
+  names() %>% tail()
+
+```
+
+
+```{r, all add nzv glmnet}
+set.seed(98123)
+nzv_glmnet_all_add <- train(nzv_model_all_add, data = df_all,
+                 method = "glmnet",
+                 metric = my_metric,
+                 trControl = my_ctrl)
+
+nzv_glmnet_all_add
+```
+
+
+Lets take a look at the results using visualizations.
+
+```{r, roc viz}
+all_cv_summary <- resamples(list(DEFAULT_ALL_ADD = fit_glmnet_add_all,
+                                  DEFAULT_REGION_X = fit_glmnet_region_X,
+                                  DEFAULT_CUSTOMER_X = fit_glmnet_customer_X,
+                                  LUMP_OTHER_CUST_X = lump_glmnet_customer_X,
+                                  UP_50_CUST_X = up_50_glmnet_customer_X,
+                                  UP_100_CUST_X = up_100_glmnet_customer_X,
+                                  NZV_CUSTOMER_X = nzv_glmnet_customer_X,
+                                  NZV_CUST_X_REGION_X = nzv_glmnet_customer_X_region,
+                                  DOWN_UP_CUST_X = down_100_glmnet_customer_X_region,
+                                  UP_50_ALL_ADD = up_50_glmnet_all_add,
+                                  NZV_ALL_ADD = nzv_glmnet_all_add
+                                 ))
+
+
+dotplot(all_cv_summary, metric = 'ROC')
+
+```
+
+

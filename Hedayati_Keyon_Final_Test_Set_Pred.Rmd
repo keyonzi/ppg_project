@@ -1,0 +1,80 @@
+---
+title: "Test Set Predictions"
+author: "Keyon Hedayati"
+date: "4/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load packages}
+library(tidyverse)
+library(caret)
+```
+
+Load Hold Out
+```{r, hold_01}
+holdout <- readr::read_csv('final_project_holdout_inputs.csv', col_names = TRUE)
+```
+
+Load Best Models
+
+```{r, load regression}
+re_svm_radial_tuned <- readr::read_rds('bagged_MARS_tuned.rds')
+```
+
+
+```{r, load classification}
+re_class_avg_nnet <- readr::read_rds('tune_avg_nnet_class.rds')
+```
+
+```{r, hold_04}
+holdout_inputs <- holdout %>% 
+  select(-rowid)
+```
+
+**Regression Predictions**
+
+```{r, hold_05}
+reg_pred_holdout <- predict(re_svm_radial_tuned, holdout_inputs)
+reg_pred_holdout %>% head()
+```
+
+**Classification Predictions**
+
+```{r, class pred}
+class_pred_holdout <- predict(re_class_avg_nnet, newdata = holdout_inputs, type = 'prob') 
+class_pred_holdout %>% head()
+```
+
+```{r, compile_01}
+keyon_preds <- tibble::tibble(
+  y = predict(re_svm_radial_tuned, newdata = holdout_inputs),
+  outcome = predict(re_class_avg_nnet, newdata = holdout_inputs)
+) %>% 
+  bind_cols(
+    predict(re_class_avg_nnet, newdata = holdout_inputs, type = 'prob') %>% 
+      select(probability = event)
+  ) %>% 
+  tibble::rowid_to_column('id')
+```
+
+
+```{r}
+keyon_preds %>% glimpse()
+```
+
+
+```{r, compile_04}
+keyon_preds %>% 
+  readr::write_csv('Hedayati_Keyon_Final_Predictions.csv', col_names = TRUE)
+```
+
+
+
+
+
+
+
